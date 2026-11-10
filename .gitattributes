@@ -1,0 +1,6 @@
+# Os scripts rodam no Linux da placa: sempre com quebra de linha LF,
+# mesmo quando o repositorio e clonado no Windows.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.service text eol=lf

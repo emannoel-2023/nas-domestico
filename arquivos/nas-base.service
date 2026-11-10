@@ -1,0 +1,16 @@
+[Unit]
+Description=NAS: instalacao base (OpenMediaVault, Docker, Tailscale)
+After=network-online.target nas-preparar.service
+Wants=network-online.target
+# So roda depois que o usuario se cadastrou na pagina, e ate terminar.
+# Se a placa reiniciar no meio, continua sozinha no proximo boot.
+ConditionPathExists=/etc/nas-instalador.conf
+ConditionPathExists=!/var/lib/nas-instalador/base-ok
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/instalar-nas.sh --base
+TimeoutStartSec=3h
+
+[Install]
+WantedBy=multi-user.target

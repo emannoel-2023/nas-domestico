@@ -1,0 +1,13 @@
+[Unit]
+Description=NAS: preparacao do primeiro boot (seguranca e pacotes da pagina)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/nas-instalador/preparado
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nas-preparar.sh
+TimeoutStartSec=1h
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+# imagens geradas (sao publicadas em Releases, nao no repositorio)
+saida/
+*.img
+*.img.xz
+*.img.sha256
+*.img.xz.sha256
+
+# Python
+__pycache__/
+*.pyc
+
+# sistema
+.DS_Store
+Thumbs.db
+desktop.ini
