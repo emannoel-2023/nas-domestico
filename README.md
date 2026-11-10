@@ -11,7 +11,7 @@ pelo navegador do PC ou do celular.
 
 ## Como usar (5 passos)
 
-1. **Baixe a imagem** em [Releases](../../releases): arquivo `nas-domestico-rock4bplus-*.img.xz`.
+1. **Baixe a imagem** na [versão mais recente](../../releases/latest): arquivo `nas-domestico-rock4bplus-*.img.xz`.
 2. **Grave no microSD** (16 GB ou mais) com o [balenaEtcher](https://etcher.balena.io/).
    Se o Windows pedir para formatar o cartão depois, clique em **Cancelar**.
 3. **Ligue a placa** com o microSD, o **cabo de rede** e a fonte. Aguarde ~10 minutos.
