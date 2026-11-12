@@ -76,10 +76,24 @@ Uma telinha OLED **0,96" 128x64 I2C de 4 pinos** (controlador SSD1306, por exemp
 | **PRONTO!** | **Abra o endereço mostrado no navegador** e crie o usuário |
 | INSTALANDO | Etapa atual (1 a 5) e barra de progresso |
 | ERRO | Abra a página e clique em *Tentar de novo* |
-| NAS OK | Endereço, IP, discos e Nextcloud |
+| NAS OK | Endereço, IP da rede, **IP do Tailscale**, quantos discos e o Nextcloud |
 
 Sem a tela, tudo funciona igual. Depois de 10 minutos sem mudança, o brilho baixa para
 poupar o OLED.
+
+**Num NAS que já está funcionando** (por exemplo, montado à mão, sem esta imagem), a tela pode
+ser instalada sem apagar nada. Com a placa ligada e acessada por SSH:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/emannoel-2023/nas-domestico/main/arquivos/instalar-oled.sh | sudo bash
+sudo reboot
+```
+
+Ele só copia o programa da tela e liga o I2C7 no `/boot/armbianEnv.txt` (guardando uma cópia
+em `armbianEnv.txt.antes-oled`). Nesse modo, a tela mostra o nome da placa, o IP, o IP do
+Tailscale, quantos discos estão ligados e os tamanhos. Para desfazer, rode o mesmo comando com
+`| sudo bash -s -- --remover`. O "LIGANDO" em 4 segundos depende do U-Boot do NAS e não é
+instalado por esse comando; sem ele, a tela acende quando o Linux começa.
 
 ### O que acontece com cada SSD
 

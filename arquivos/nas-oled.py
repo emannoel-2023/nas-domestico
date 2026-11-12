@@ -29,6 +29,7 @@ PREPARADO = "/var/lib/nas-instalador/preparado"
 CONF = "/etc/nas-instalador.conf"
 BASE_OK = "/var/lib/nas-instalador/base-ok"
 DISCOS = "/run/nas/discos.json"
+INSTALADOR = "/usr/local/sbin/instalar-nas.sh"
 LOG_PREPARAR = "/var/log/nas-preparar.log"
 PORTA = 8000
 ESPERA_IP = 180          # segundos depois do boot antes de dizer "SEM REDE"
@@ -207,6 +208,47 @@ def servico_ativo(nome):
         return False
 
 
+_lento = {"t": -1e9, "ts": "", "discos": []}   # consultas mais caras: a cada 30 s
+
+
+def tailscale_ip():
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        partes = r.stdout.split()
+        return partes[0] if r.returncode == 0 and partes else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def tamanho_curto(b):
+    for limite, sufixo in ((1e12, "TB"), (1e9, "GB"), (1e6, "MB")):
+        if b >= limite:
+            v = b / limite
+            return f"{v:.1f}{sufixo}" if v < 10 else f"{v:.0f}{sufixo}"
+    return f"{b}B"
+
+
+def discos_ligados():
+    """SSDs/HDs ligados (USB ou SATA): [(nome, tamanho)]. Ignora microSD, eMMC e zram."""
+    try:
+        r = subprocess.run(["lsblk", "-dnb", "-o", "NAME,TYPE,SIZE"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    discos = []
+    for linha in r.stdout.splitlines():
+        partes = linha.split()
+        if len(partes) == 3 and partes[1] == "disk" and partes[2].isdigit() and int(partes[2]) > 0 \
+                and not partes[0].startswith(("mmcblk", "zram", "loop", "ram", "mtd")):
+            discos.append((partes[0], tamanho_curto(int(partes[2]))))
+    return discos
+
+
+def consultas_lentas():
+    if time.time() - _lento["t"] >= 30:
+        _lento.update(t=time.time(), ts=tailscale_ip(), discos=discos_ligados())
+    return _lento["ts"], _lento["discos"]
+
+
 def esperando_internet():
     try:
         with open(LOG_PREPARAR, encoding="utf-8", errors="replace") as f:
@@ -217,7 +259,11 @@ def esperando_internet():
 
 
 def estado():
+    ts, ligados = consultas_lentas()
     return {
+        "modo_nas": os.path.exists(INSTALADOR),   # imagem do NAS? senao, so mostra o basico
+        "ts_ip": ts,
+        "ligados": ligados,
         "ip": ip_local(),
         "ligado_ha": tempo_ligado(),
         "preparado": os.path.exists(PREPARADO),
@@ -241,6 +287,14 @@ def tela_para(e):
         if e.get("ligado_ha", 0) < ESPERA_IP:
             return "LIGANDO", ["Aguarde...", "", "", "", ""]
         return "SEM REDE", ["Ja faz 3 minutos e", "a placa nao entrou", "na rede. Confira o", "cabo e o roteador."]
+    ts = e.get("ts_ip", "")
+    linha_ts = f"TS {ts}" if ts else "Tailscale: desligado"
+    if not e.get("modo_nas", True):
+        # NAS montado a mao (sem o instalador desta imagem): enderecos e discos
+        ligados = e.get("ligados", [])
+        tamanhos = " ".join(t for _, t in ligados) or "ligue um SSD/HD"
+        return "NAS OK", [f"{e['host']}.local"[:21], f"IP {ip}", linha_ts,
+                          f"Discos: {len(ligados)}", tamanhos]
     if not e["preparado"]:
         if e["sem_internet"] and e.get("ligado_ha", 0) >= ESPERA_IP:
             return "SEM NET", ["A placa nao acessa", "a internet.", "Confira o cabo e o", "roteador.", f"IP {ip}"]
@@ -259,15 +313,20 @@ def tela_para(e):
         barra = "#" * (feitas * 4) + "-" * ((len(ETAPAS) - feitas) * 4)
         return "INSTALANDO", [f"Etapa {min(feitas + 1, 5)} de 5", NOMES.get(atual, "..."),
                               f"[{barra[:19]}]", "Leva 20 a 40 min", f"IP {ip}"]
-    linhas = [endereco, f"IP {ip}"]
+    linhas = [endereco, f"IP {ip}", linha_ts]
     discos = e["discos"]
     if not discos:
-        linhas += ["Sem disco: ligue um", "SSD/HD na USB azul"]
-    for d in discos[:2]:
-        rotulo = {"em_uso": "em uso", "vazio": "novo", "preparando": "preparando",
-                  "com_dados": "TEM DADOS", "em_uso_outro": "fora do NAS"}.get(d.get("estado"), d.get("estado", ""))
-        linhas.append(f"{d.get('tamanho', '')} {rotulo}")
-    nc = {"instalando": "Nextcloud: instalando", "pronto": "Nextcloud: pronto"}.get(prog.get("nextcloud"))
+        linhas.append("Discos: 0 (ligue um)")
+    else:
+        uso = sum(1 for d in discos if d.get("estado") == "em_uso")
+        dados = sum(1 for d in discos if d.get("estado") == "com_dados")
+        if dados:
+            linhas.append(f"Discos: {len(discos)} ({dados} c/dados)")
+        elif uso == len(discos):
+            linhas.append(f"Discos: {len(discos)} em uso")
+        else:
+            linhas.append(f"Discos: {len(discos)} ({uso} em uso)")
+    nc ={"instalando": "Nextcloud: instalando", "pronto": "Nextcloud: pronto"}.get(prog.get("nextcloud"))
     if nc and len(linhas) < 5:
         linhas.append(nc)
     if etapas.get("nextcloud") == "erro" and len(linhas) < 5:
@@ -322,7 +381,8 @@ def previa(pasta):
     base = {"ip": "192.168.0.39", "preparado": True, "preparando": False, "sem_internet": False,
             "pagina": True, "configurado": True, "base_ok": True, "host": "nas",
             "prog": {"etapas": {k: "ok" for k in ETAPAS}, "nextcloud": "pronto"},
-            "discos": [{"tamanho": "81GB", "estado": "em_uso"}]}
+            "discos": [{"tamanho": "81GB", "estado": "em_uso"}],
+            "modo_nas": True, "ts_ip": "100.86.12.34", "ligados": [("sda", "80GB")]}
     casos = {
         "0-ligando": {"ip": "", "ligado_ha": 20},
         "1-sem-rede": {"ip": "", "ligado_ha": 300},
@@ -332,7 +392,9 @@ def previa(pasta):
         "5-instalando": {"base_ok": False, "prog": {"etapas": {"base": "ok", "omv": "andamento"}}},
         "6-erro": {"base_ok": False, "prog": {"etapas": {"base": "ok", "omv": "erro"}, "erro": "x"}},
         "7-nas-ok": {},
-        "8-sem-disco": {"discos": [], "prog": {"etapas": {}, "nextcloud": "aguardando_disco"}},
+        "8-sem-disco": {"discos": [], "ts_ip": "", "prog": {"etapas": {}, "nextcloud": "aguardando_disco"}},
+        "9-nas-manual": {"modo_nas": False, "host": "rockpi-4bplus",
+                         "ligados": [("sda", "1.0TB"), ("sdb", "240GB")]},
     }
     for nome, mudar in casos.items():
         desenhar(*tela_para({**base, **mudar})).png(os.path.join(pasta, nome + ".png"))

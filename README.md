@@ -64,6 +64,7 @@ sudo instalar-nas.sh --verificar               # confere a instalação
 | `arquivos/nas-assistente.py` | Página de configuração/painel (porta 8000, só biblioteca padrão do Python) |
 | `arquivos/nas-preparar.sh` | Primeiro boot: bloqueia `root`/`1234`, desliga o autologin e instala o necessário |
 | `arquivos/nas-oled.py` | Tela OLED opcional (0,96" SSD1306 I2C): mostra PRONTO!, IP, andamento e discos |
+| `arquivos/instalar-oled.sh` | Instala só a tela OLED num NAS que já está funcionando, sem apagar nada |
 | `arquivos/u-boot/` | Bootloader da imagem (U-Boot v2025.01 com I2C) e o script que o recompila |
 | `arquivos/*.service` | Serviços systemd do primeiro boot, da página e da instalação base |
 

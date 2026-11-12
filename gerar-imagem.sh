@@ -86,6 +86,7 @@ echo 'DPkg::Lock::Timeout "900";' > "$MNT/etc/apt/apt.conf.d/90nas-lock"
 # 5 = SCL) e o /dev/i2c-*. Sem tela, nada muda: o servico nas-oled so encerra.
 ENV="$MNT/boot/armbianEnv.txt"
 if [[ -f "$ENV" ]] && ! grep -q 'rk3399-i2c7' "$ENV"; then
+  [[ -z "$(tail -c1 "$ENV")" ]] || echo >> "$ENV"
   if grep -q '^overlays=' "$ENV"; then sed -i 's/^overlays=\(.*\)$/overlays=\1 rk3399-i2c7/' "$ENV"
   else echo "overlays=rk3399-i2c7" >> "$ENV"; fi
 fi
