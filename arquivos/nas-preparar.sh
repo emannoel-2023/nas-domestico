@@ -8,6 +8,8 @@ set -uo pipefail
 LOG=/var/log/nas-preparar.log
 exec >> "$LOG" 2>&1
 echo "===== $(date -Is) nas-preparar ====="
+led() { /usr/local/sbin/nas-led "$1" || true; }
+led preparando                               # LED pisca rapido: aguarde
 
 # --- 1) Seguranca -------------------------------------------------------------
 passwd -l root || true                       # sem login de root por senha
@@ -29,12 +31,16 @@ export DEBIAN_FRONTEND=noninteractive
 ok=0
 for t in $(seq 1 90); do                     # ate ~15 minutos
   if getent hosts deb.debian.org >/dev/null && apt-get update; then ok=1; break; fi
-  echo "aguardando internet ($t)..."; sleep 10
+  echo "aguardando internet ($t)..."
+  if (( t >= 3 )); then led sem-internet; fi # LED pisca devagar: confira o cabo
+  sleep 10
 done
 if (( ok == 0 )); then
+  led sem-internet
   echo "SEM INTERNET: confira o cabo de rede. Tentando de novo no proximo boot."
   exit 1
 fi
+led preparando
 for t in 1 2 3; do
   apt-get install -y python3 avahi-daemon qrencode jq curl ca-certificates && break
   sleep 20

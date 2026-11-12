@@ -64,6 +64,7 @@ ls "$MNT/root/.not_logged_in_yet" >/dev/null 2>&1 && echo "assistente de 1o logi
 echo "== 4/5 Copiando os arquivos do NAS"
 install -D -m 755 "$ARQ/instalar-nas.sh"        "$MNT/usr/local/sbin/instalar-nas.sh"
 install -D -m 755 "$ARQ/nas-preparar.sh"        "$MNT/usr/local/sbin/nas-preparar.sh"
+install -D -m 755 "$ARQ/nas-led.sh"             "$MNT/usr/local/sbin/nas-led"
 install -D -m 755 "$ARQ/nas-assistente.py"      "$MNT/usr/local/lib/nas/nas-assistente.py"
 for u in nas-preparar.service nas-assistente.service nas-base.service; do
   install -D -m 644 "$ARQ/$u" "$MNT/etc/systemd/system/$u"
@@ -79,7 +80,7 @@ mkdir -p "$MNT/etc/apt/apt.conf.d"
 echo 'DPkg::Lock::Timeout "900";' > "$MNT/etc/apt/apt.conf.d/90nas-lock"
 { echo "nas-imagem gerada em $(date -Is)"; echo "base: $ORIGEM"; echo "sha256 base: $obtido"; } > "$MNT/etc/nas-imagem-versao"
 sync
-ls -l "$MNT"/usr/local/sbin/instalar-nas.sh "$MNT"/usr/local/sbin/nas-preparar.sh \
+ls -l "$MNT"/usr/local/sbin/instalar-nas.sh "$MNT"/usr/local/sbin/nas-preparar.sh "$MNT"/usr/local/sbin/nas-led \
       "$MNT"/usr/local/lib/nas/nas-assistente.py "$MNT"/etc/systemd/system/multi-user.target.wants/nas-*
 limpar; trap - EXIT
 

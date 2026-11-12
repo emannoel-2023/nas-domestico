@@ -153,23 +153,50 @@ def tailscale_login():
     threading.Thread(target=trabalho, daemon=True).start()
 
 
+# ---------------------------------------------------------------------- discos
+# Mensagens do kernel que aparecem quando algo foi ligado na USB e nao respondeu
+# direito (tipico de HD sem energia suficiente, cabo ruim ou porta fraca).
+PROBLEMAS_USB = ("over-current", "device descriptor read", "unable to enumerate",
+                 "not accepting address", "uas_eh_abort_handler")
+_discos = {"t": 0.0, "usb": False}
+_discos_trava = threading.Lock()
+
+
+def discos_atuais(base_ok):
+    """Antes da instalacao base terminar, o organizador ainda nao roda. Entao a
+    propria pagina pede a lista (so leitura) a cada 10 s, para o usuario ver o
+    disco assim que o conecta. Tambem procura sinais de problema na USB."""
+    with _discos_trava:
+        if time.time() - _discos["t"] >= 10:
+            _discos["t"] = time.time()
+            if not base_ok:
+                rodar(INSTALADOR, "--listar", timeout=30)
+            rc, saida = rodar("journalctl", "-k", "-S", "-3min", "-o", "cat",
+                              "--no-pager", timeout=10)
+            _discos["usb"] = rc == 0 and any(p in saida for p in PROBLEMAS_USB)
+    return ler_json(DISCOS, []), _discos["usb"]
+
+
 # ---------------------------------------------------------------------- estado
 def estado(completo):
     prog = ler_json(PROGRESSO, {"etapas": {}})
     ip = ip_local()
     host = socket.gethostname()
     _, base_ativo = rodar("systemctl", "is-active", "nas-base.service")
+    base_ok = os.path.exists(BASE_OK)
+    discos, usb_problema = discos_atuais(base_ok)
     e = {
         "configurado": configurado(),
         "usuario": usuario_conf(),
-        "base_ok": os.path.exists(BASE_OK),
+        "base_ok": base_ok,
         "base_ativo": base_ativo in ("active", "activating"),
         "etapas": prog.get("etapas", {}),
         "erro": prog.get("erro", ""),
         "nextcloud": prog.get("nextcloud", "aguardando_disco"),
         "etapa_nextcloud": prog.get("etapas", {}).get("nextcloud", ""),
         "tailscale": tailscale_estado(),
-        "discos": ler_json(DISCOS, []),
+        "discos": discos,
+        "usb_problema": usb_problema,
         "enderecos": {
             "ip": ip, "host": host,
             "pagina": f"http://{host}.local:{PORTA}",
@@ -230,6 +257,8 @@ def formatar(dados):
     dev = dados.get("dev", "")
     if dados.get("confirmacao") != "APAGAR":
         return 400, {"erro": "Digite APAGAR para confirmar."}
+    if not os.path.exists(BASE_OK):
+        return 409, {"erro": "Espere a instalacao terminar para usar este disco."}
     discos = ler_json(DISCOS, [])
     alvo = next((d for d in discos if d.get("dev") == dev), None)
     if not alvo or alvo.get("estado") != "com_dados":
@@ -357,7 +386,7 @@ a{color:var(--az)}.oculto{display:none}
 </section>
 
 <section id="c-discos" class="card oculto">
-  <h2>SSDs</h2>
+  <h2>Discos (SSD ou HD)</h2>
   <div id="discos"></div>
   <div id="nc" class="msg info"></div>
 </section>
@@ -413,17 +442,19 @@ function tailscale(e){
 const ESTADOS={em_uso:["Em uso","ok"],vazio:["Novo - sera preparado","and"],preparando:["Preparando","and"],com_dados:["Tem dados","err"],em_uso_outro:["Montado fora do NAS","pen"]};
 function discos(e){
   const ds=e.discos||[];let h="";
-  if(!e.base_ok)h="<p>Pode conectar os SSDs agora ou depois. Eles serao usados quando a instalacao terminar.</p>";
-  if(!ds.length)h+="<p>Nenhum SSD conectado. Conecte um SSD numa porta <b>USB 3.0 (azul)</b> da placa. Ele aparece aqui em ate 1 minuto.</p>";
+  if(!e.base_ok)h="<p>Pode conectar os discos agora ou depois. Eles aparecem aqui logo, mas so serao usados quando a instalacao terminar.</p>";
+  if(!ds.length)h+="<p>Nenhum disco conectado. Conecte um SSD ou HD numa porta <b>USB 3.0 (azul)</b> da placa. Ele aparece aqui em ate 1 minuto.</p>";
+  if(e.usb_problema)h+=`<div class="msg err">Algo foi ligado numa porta USB e nao respondeu direito. Se for um <b>HD de disco</b>, provavelmente falta energia: use um <b>hub USB com fonte</b> (ou um HD com fonte propria) e uma fonte de 5 V / 3 A na placa. Tambem vale testar outro cabo e a porta USB 3.0 (azul).</div>`;
   for(const d of ds){const [t,c]=ESTADOS[d.estado]||[d.estado,"pen"];
-    h+=`<div class="disco"><b>${esc(d.modelo||"Disco")}</b> ${esc(d.tamanho)} <span class="tag ${c}">${t}</span><br><small>${esc(d.dev)} - ${esc(d.papel)}</small>`;
-    if(d.estado==="com_dados")h+=`<br><small>Este disco ja tem dados e NAO sera apagado sozinho.</small><br><button class="perigo" data-dev="${esc(d.dev)}">Apagar e usar este disco</button>`;
+    h+=`<div class="disco"><b>${esc(d.modelo||"Disco")}</b> ${esc(d.tamanho)} <span class="tag ${c}">${t}</span><br><small>${esc(d.dev)} - ${esc(e.base_ok?d.papel:"Sera usado quando a instalacao terminar")}</small>`;
+    if(d.estado==="com_dados"){h+=`<br><small>Este disco ja tem dados e NAO sera apagado sozinho.</small>`;
+      h+=e.base_ok?`<br><button class="perigo" data-dev="${esc(d.dev)}">Apagar e usar este disco</button>`:`<br><small>Quando a instalacao terminar, aparece aqui o botao para apagar e usar este disco.</small>`}
     h+="</div>"}
   $("discos").innerHTML=h;
   document.querySelectorAll("button[data-dev]").forEach(b=>b.onclick=async()=>{
     const c=prompt("ATENCAO: tudo o que estiver em "+b.dataset.dev+" sera APAGADO.\nPara confirmar, digite APAGAR:");
     if(c!=="APAGAR")return;try{await post("/api/formatar",{dev:b.dataset.dev,confirmacao:c});alert("Preparando o disco. Acompanhe nesta pagina.")}catch(err){alert(err.message)}});
-  const nc={aguardando_disco:"Nextcloud: sera criado quando houver um SSD.",instalando:"Nextcloud: instalando (alguns minutos)...",pronto:"Nextcloud: pronto."}[e.nextcloud]||"";
+  const nc={aguardando_disco:"Nextcloud: sera criado quando houver um disco.",instalando:"Nextcloud: instalando (alguns minutos)...",pronto:"Nextcloud: pronto."}[e.nextcloud]||"";
   $("nc").textContent=e.etapa_nextcloud==="erro"?"Nextcloud: houve um problema, o NAS vai tentar de novo sozinho.":nc;
 }
 function enderecos(e){
@@ -437,8 +468,8 @@ async function atualizar(){
   try{const r=await fetch("/api/estado",{cache:"no-store"});if(r.status===401){location.reload();return}
     const e=await r.json();mostra("conexao",false);
     mostra("c-config",!e.configurado);mostra("c-inst",e.configurado);mostra("c-ts",e.configurado);
-    mostra("c-discos",e.configurado);mostra("c-end",e.base_ok);
-    if(e.configurado){etapas(e);tailscale(e);discos(e)}if(e.base_ok)enderecos(e);
+    mostra("c-discos",true);mostra("c-end",e.base_ok);
+    if(e.configurado){etapas(e);tailscale(e)}discos(e);if(e.base_ok)enderecos(e);
   }catch(err){mostra("conexao",true)}
 }
 atualizar();setInterval(atualizar,3000);
@@ -464,6 +495,13 @@ def criar_servidor(porta):
         return ThreadingHTTPServer(("", porta), Pagina)   # sem IPv6 na placa
 
 
+def avisar_led_pronto():
+    """LED de status aceso fixo = a pagina ja abre. So depois que o 1o boot
+    terminou; se ele falhou (sem internet), o LED continua piscando devagar."""
+    if os.path.exists("/var/lib/nas-instalador/preparado"):
+        rodar("/usr/local/sbin/nas-led", "pronto", timeout=15)
+
+
 def main():
     global servidor80
     principal = criar_servidor(PORTA)
@@ -473,6 +511,7 @@ def main():
             threading.Thread(target=servidor80.serve_forever, daemon=True).start()
         except OSError:
             servidor80 = None
+    avisar_led_pronto()
     principal.serve_forever()
 
 

@@ -34,8 +34,20 @@ roteador ou o painel do OpenMediaVault. A placa só precisa do **cabo de rede** 
      o Windows não lê o formato Linux do cartão.
 2. **Ligar a placa.** Coloque o microSD, ligue o **cabo de rede** no roteador e depois a **fonte**.
    Os SSDs podem ficar desligados por enquanto.
-3. **Esperar de 5 a 10 minutos.** No primeiro boot, a placa ajusta o sistema e baixa o que
-   precisa para mostrar a página.
+3. **Esperar de 10 a 15 minutos, sem desligar a placa.** No primeiro boot, a placa ajusta o
+   sistema e baixa o que precisa para mostrar a página. Se ela for desligada no meio, não estraga
+   nada: no próximo boot ela continua de onde parou.
+   - O LED **verde** é só de energia: fica aceso fixo o tempo todo e não indica nada.
+   - Se a sua placa tiver o LED **azul** de status funcionando, ele mostra o andamento (em
+     algumas placas esse LED não acende):
+
+   | LED azul | Significado |
+   |---|---|
+   | Pisca em "tum-tum" (batimento) | Linux ligando |
+   | Pisca **rápido** | Primeiro boot: preparando, aguarde |
+   | Pisca **devagar** | Sem internet: confira o cabo de rede |
+   | **Aceso fixo** | **Pronto: pode abrir a página** |
+
 4. **Abrir a página.** No PC ou no celular, conectado à mesma rede, abra:
    **`http://nas.local:8000`**
    - Se não abrir, descubra o IP da placa na lista de aparelhos do roteador, ou com o app gratuito
@@ -51,8 +63,12 @@ roteador ou o painel do OpenMediaVault. A placa só precisa do **cabo de rede** 
    **Conectar ao Tailscale**. Abra o link (ou aponte a câmera para o QR code) e entre na sua conta
    Tailscale. Ela é gratuita e pode ser criada com Google ou Microsoft. No celular ou notebook que
    vai acessar o NAS de fora, instale o app Tailscale e entre na mesma conta.
-9. **Conectar os SSDs** nas portas **USB 3.0 (azuis)**, a qualquer momento. Eles aparecem na
-   página em até 1 minuto.
+9. **Conectar os SSDs (ou HDs)** nas portas **USB 3.0 (azuis)**, a qualquer momento, até antes
+   de criar o usuário. Eles aparecem na página em até 1 minuto, mas só são preparados e usados
+   quando a instalação termina.
+   - **HD de disco (2,5")** gasta mais energia para girar. Se a página mostrar o aviso *"Algo foi
+     ligado numa porta USB e não respondeu direito"*, ou se o HD não aparecer, use um **hub USB
+     com fonte** (ou um HD com fonte própria) e uma fonte de 5 V / 3 A na placa.
 
 ### O que acontece com cada SSD
 
@@ -107,6 +123,7 @@ nas-imagem/
     ├── instalar-nas.sh        instalador (base, organizador de SSDs, verificação)
     ├── nas-assistente.py      página de configuração/painel (porta 8000, só Python padrão)
     ├── nas-preparar.sh        1º boot: segurança + pacotes da página
+    ├── nas-led.sh             LED de status (preparando / sem internet / pronto)
     ├── nas-preparar.service   roda o nas-preparar.sh uma vez
     ├── nas-assistente.service mantém a página no ar
     └── nas-base.service       instalação base (continua sozinha se a placa reiniciar)
@@ -117,12 +134,18 @@ nas-imagem/
 1. **`nas-preparar`** (só no primeiro boot):
    - bloqueia o login de `root` (o Armbian vem com a senha `1234`);
    - desliga o assistente de primeiro login e o login automático do console;
-   - instala `python3`, `avahi-daemon` (para o nome `nas.local`) e `qrencode`.
+   - instala `python3`, `avahi-daemon` (para o nome `nas.local`) e `qrencode`;
+   - enquanto isso, o LED de status pisca rápido (ou devagar, se não houver internet),
+     pelo `nas-led`, que usa o gatilho `timer` do kernel.
 2. **`nas-assistente`** (sempre ativo):
-   - mostra a página na porta **8000**;
+   - mostra a página na porta **8000** e, assim que ela abre, deixa o LED de status aceso fixo
+     (gatilho `default-on`); se o serviço parar, o LED volta ao batimento (`heartbeat`);
    - na porta 80, só redireciona para a 8000, e apenas até a configuração (depois a porta 80
      passa a ser do painel do OMV);
-   - depois do cadastro, exige usuário e senha (HTTP Basic, senha guardada como PBKDF2).
+   - depois do cadastro, exige usuário e senha (HTTP Basic, senha guardada como PBKDF2);
+   - antes de a instalação base terminar, lista os discos conectados a cada 10 s com
+     `instalar-nas.sh --listar` (só leitura) e procura no log do kernel sinais de problema na
+     USB (`device descriptor read`, `over-current`...), mostrando um aviso de falta de energia.
 3. **`nas-base`**, iniciado quando o usuário clica em *Começar instalação*, roda
    `instalar-nas.sh --base`:
    - pacotes;
@@ -172,9 +195,10 @@ Problemas encontrados no microSD do protótipo e como a instalação automática
 
 | Sintoma | O que fazer |
 |---|---|
-| `nas.local` não abre | Espere 10 min no primeiro boot. Use o IP da placa (roteador ou app Fing) com `:8000` |
-| A página não abre nem pelo IP | Confira o cabo de rede e se a placa tem internet. Sem internet, o primeiro boot não termina e tenta de novo no próximo boot |
+| `nas.local` não abre | Espere 15 minutos no primeiro boot (ou o LED azul ficar aceso fixo, se a placa tiver). Use o IP da placa (roteador ou app Fing) com `:8000` |
+| LED azul pisca devagar / a página não abre nem pelo IP | Confira o cabo de rede e se a placa tem internet. Sem internet, o primeiro boot não termina e tenta de novo no próximo boot |
 | Etapa com ✗ vermelho | Clique em **Tentar de novo**. Os detalhes técnicos ficam no fim da caixa *Instalação* |
+| O HD/SSD não aparece na página | Espere 1 minuto. Se a página avisar problema na USB, falta energia ou o cabo é ruim: use um hub USB com fonte e a porta azul |
 | O SSD aparece como "Tem dados" | É proteção: use *Apagar e usar este disco* (apaga tudo) ou o painel do OMV |
 | O Nextcloud demora | No primeiro uso, ele baixa as imagens e cria o banco: de 5 a 15 minutos no microSD |
 | Esqueci a senha | Pelo painel do OMV (`admin`) ou por SSH com o usuário criado (ele tem `sudo`) |
