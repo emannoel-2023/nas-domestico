@@ -4,6 +4,8 @@ saida/
 *.img.xz
 *.img.sha256
 *.img.xz.sha256
+# excecao: o bootloader do NAS (pequeno, versionado junto com o codigo)
+!arquivos/u-boot/idbloader.img
 
 # Python
 __pycache__/

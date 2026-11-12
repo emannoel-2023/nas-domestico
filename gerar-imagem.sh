@@ -65,11 +65,16 @@ echo "== 4/5 Copiando os arquivos do NAS"
 install -D -m 755 "$ARQ/instalar-nas.sh"        "$MNT/usr/local/sbin/instalar-nas.sh"
 install -D -m 755 "$ARQ/nas-preparar.sh"        "$MNT/usr/local/sbin/nas-preparar.sh"
 install -D -m 755 "$ARQ/nas-assistente.py"      "$MNT/usr/local/lib/nas/nas-assistente.py"
+install -D -m 755 "$ARQ/nas-oled.py"            "$MNT/usr/local/lib/nas/nas-oled.py"
 for u in nas-preparar.service nas-assistente.service nas-base.service; do
   install -D -m 644 "$ARQ/$u" "$MNT/etc/systemd/system/$u"
   mkdir -p "$MNT/etc/systemd/system/multi-user.target.wants"
   ln -sf "/etc/systemd/system/$u" "$MNT/etc/systemd/system/multi-user.target.wants/$u"
 done
+# A tela OLED sobe no inicio do boot (sysinit), antes da rede e dos outros servicos
+install -D -m 644 "$ARQ/nas-oled.service" "$MNT/etc/systemd/system/nas-oled.service"
+mkdir -p "$MNT/etc/systemd/system/sysinit.target.wants"
+ln -sf /etc/systemd/system/nas-oled.service "$MNT/etc/systemd/system/sysinit.target.wants/nas-oled.service"
 # nome na rede: nas  ->  http://nas.local:8000
 antigo=$(cat "$MNT/etc/hostname" 2>/dev/null || echo "")
 echo "$NOME_HOST" > "$MNT/etc/hostname"
@@ -77,11 +82,59 @@ if [[ -n "$antigo" ]]; then sed -i "s/\b$antigo\b/$NOME_HOST/g" "$MNT/etc/hosts"
 grep -q "\b$NOME_HOST\b" "$MNT/etc/hosts" || echo "127.0.1.1 $NOME_HOST" >> "$MNT/etc/hosts"
 mkdir -p "$MNT/etc/apt/apt.conf.d"
 echo 'DPkg::Lock::Timeout "900";' > "$MNT/etc/apt/apt.conf.d/90nas-lock"
+# Tela OLED opcional (SSD1306 128x64): liga o I2C 7 da ROCK 4B+ (pinos 3 = SDA,
+# 5 = SCL) e o /dev/i2c-*. Sem tela, nada muda: o servico nas-oled so encerra.
+ENV="$MNT/boot/armbianEnv.txt"
+if [[ -f "$ENV" ]] && ! grep -q 'rk3399-i2c7' "$ENV"; then
+  if grep -q '^overlays=' "$ENV"; then sed -i 's/^overlays=\(.*\)$/overlays=\1 rk3399-i2c7/' "$ENV"
+  else echo "overlays=rk3399-i2c7" >> "$ENV"; fi
+fi
+echo "i2c-dev" > "$MNT/etc/modules-load.d/nas-oled.conf"
+grep '^overlays=' "$ENV" || echo "AVISO: nao achei $ENV (tela OLED nao sera ativada)"
+# Tela OLED desde o boot: o U-Boot do NAS (com i2c, ver arquivos/u-boot) mostra
+# "LIGANDO" ~2 s depois de ligar a energia, antes do Linux.
+UB="$ARQ/u-boot"
+USAR_UBOOT=0
+if [[ -s "$UB/idbloader.img" && -s "$UB/u-boot.itb" ]]; then
+  USAR_UBOOT=1
+  command -v mkimage >/dev/null || { echo "Falta o mkimage (instale o pacote u-boot-tools)"; exit 1; }
+  ( cd "$UB" && sha256sum -c SHA256SUMS )
+  python3 "$ARQ/nas-oled.py" --quadro-ligando "$MNT/boot/nas-oled-ligando.bin"
+  if ! grep -q 'nas-domestico' "$MNT/boot/boot.cmd"; then
+    sed -i "/^test -n \"\${distro_bootpart}\"/r $UB/boot-oled.cmd" "$MNT/boot/boot.cmd"
+  fi
+  grep -q 'nas-oled-ligando.bin' "$MNT/boot/boot.cmd" || { echo "Nao consegui alterar o boot.cmd"; exit 1; }
+  mkimage -C none -A arm -T script -d "$MNT/boot/boot.cmd" "$MNT/boot/boot.scr" >/dev/null
+  # Impede que uma atualizacao do Armbian troque este U-Boot pelo original (sem i2c)
+  python3 - "$MNT/var/lib/dpkg/status" <<'PY'
+import re, sys
+caminho = sys.argv[1]
+blocos = open(caminho, encoding="utf-8").read().split("\n\n")
+n = 0
+for i, b in enumerate(blocos):
+    if re.match(r"Package: linux-u-boot-", b):
+        blocos[i] = b.replace("Status: install ok installed", "Status: hold ok installed"); n += 1
+open(caminho, "w", encoding="utf-8").write("\n\n".join(blocos))
+print("pacote do U-Boot do Armbian travado (hold):", n)
+PY
+fi
 { echo "nas-imagem gerada em $(date -Is)"; echo "base: $ORIGEM"; echo "sha256 base: $obtido"; } > "$MNT/etc/nas-imagem-versao"
 sync
 ls -l "$MNT"/usr/local/sbin/instalar-nas.sh "$MNT"/usr/local/sbin/nas-preparar.sh \
-      "$MNT"/usr/local/lib/nas/nas-assistente.py "$MNT"/etc/systemd/system/multi-user.target.wants/nas-*
+      "$MNT"/usr/local/lib/nas/nas-assistente.py "$MNT"/usr/local/lib/nas/nas-oled.py \
+      "$MNT"/etc/systemd/system/multi-user.target.wants/nas-* \
+      "$MNT"/etc/systemd/system/sysinit.target.wants/nas-oled.service
 limpar; trap - EXIT
+
+if (( USAR_UBOOT )); then
+  echo "== Gravando o U-Boot do NAS (idbloader no setor 64, u-boot.itb no setor 16384)"
+  (( inicio >= 32768 )) || { echo "A particao comeca antes do setor 32768: layout inesperado."; exit 1; }
+  (( $(stat -c %s "$UB/idbloader.img") <= (16384 - 64) * 512 )) || { echo "idbloader.img grande demais"; exit 1; }
+  (( $(stat -c %s "$UB/u-boot.itb") <= 16384 * 512 )) || { echo "u-boot.itb grande demais"; exit 1; }
+  dd if=/dev/zero of=nas.img bs=512 seek=64 count=$((32768 - 64)) conv=notrunc status=none
+  dd if="$UB/idbloader.img" of=nas.img bs=512 seek=64 conv=notrunc status=none
+  dd if="$UB/u-boot.itb" of=nas.img bs=512 seek=16384 conv=notrunc status=none
+fi
 
 echo "== 5/5 Imagem pronta"
 mv nas.img "$SAIDA/nas-tcc.img"

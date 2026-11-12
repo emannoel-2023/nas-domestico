@@ -14,7 +14,8 @@ pelo navegador do PC ou do celular.
 1. **Baixe a imagem** na [versão mais recente](../../releases/latest): arquivo `nas-domestico-rock4bplus-*.img.xz`.
 2. **Grave no microSD** (16 GB ou mais) com o [balenaEtcher](https://etcher.balena.io/).
    Se o Windows pedir para formatar o cartão depois, clique em **Cancelar**.
-3. **Ligue a placa** com o microSD, o **cabo de rede** e a fonte. Aguarde ~10 minutos.
+3. **Ligue a placa** com o microSD, o **cabo de rede** e a fonte. Aguarde 10 a 15 minutos
+   (com a tela OLED opcional, espere aparecer **PRONTO!** com o endereço e o IP).
 4. **Abra `http://nas.local:8000`** no PC ou no celular (ou `http://IP-DA-PLACA:8000`),
    crie seu usuário e senha e clique em **Começar instalação** (20–40 min).
 5. **Plugue o SSD** numa porta USB 3.0 (azul) e, se quiser, clique em
@@ -62,6 +63,8 @@ sudo instalar-nas.sh --verificar               # confere a instalação
 | `arquivos/instalar-nas.sh` | Instalador: base (OMV, SMB, Docker, Tailscale), organizador de SSDs, Nextcloud, backup, verificação |
 | `arquivos/nas-assistente.py` | Página de configuração/painel (porta 8000, só biblioteca padrão do Python) |
 | `arquivos/nas-preparar.sh` | Primeiro boot: bloqueia `root`/`1234`, desliga o autologin e instala o necessário |
+| `arquivos/nas-oled.py` | Tela OLED opcional (0,96" SSD1306 I2C): mostra PRONTO!, IP, andamento e discos |
+| `arquivos/u-boot/` | Bootloader da imagem (U-Boot v2025.01 com I2C) e o script que o recompila |
 | `arquivos/*.service` | Serviços systemd do primeiro boot, da página e da instalação base |
 
 Detalhes da arquitetura, ordem dos serviços e decisões de segurança: [GUIA-NAS.md](GUIA-NAS.md#3-para-os-desenvolvedores-como-a-imagem-é-gerada).
@@ -72,5 +75,8 @@ Detalhes da arquitetura, ordem dos serviços e decisões de segurança: [GUIA-NA
   página (OpenMediaVault, SMB, Docker e Tailscale).
 - Versão 2.0 incorpora as correções do primeiro teste (página acessível por IPv6 em `nas.local`
   e usuário como administrador do OMV).
+- Versão 2.1: tela OLED opcional (0,96" SSD1306) com o estado do NAS. Testada na placa: com o
+  U-Boot do NAS (com I2C, em [`arquivos/u-boot`](arquivos/u-boot)), a tela mostra "LIGANDO" cerca
+  de 4 segundos depois de ligar a energia, antes do Linux.
 - Outras placas com Armbian trixie devem funcionar trocando a URL em `gerar-imagem.sh`, mas não
   foram testadas.

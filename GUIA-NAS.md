@@ -34,8 +34,9 @@ roteador ou o painel do OpenMediaVault. A placa só precisa do **cabo de rede** 
      o Windows não lê o formato Linux do cartão.
 2. **Ligar a placa.** Coloque o microSD, ligue o **cabo de rede** no roteador e depois a **fonte**.
    Os SSDs podem ficar desligados por enquanto.
-3. **Esperar de 5 a 10 minutos.** No primeiro boot, a placa ajusta o sistema e baixa o que
-   precisa para mostrar a página.
+3. **Esperar de 10 a 15 minutos, sem desligar.** No primeiro boot, a placa ajusta o sistema e
+   baixa o que precisa para mostrar a página. Com a **tela OLED** (opcional, veja abaixo), é só
+   esperar aparecer **PRONTO!**: ela mostra o endereço e o IP para abrir no navegador.
 4. **Abrir a página.** No PC ou no celular, conectado à mesma rede, abra:
    **`http://nas.local:8000`**
    - Se não abrir, descubra o IP da placa na lista de aparelhos do roteador, ou com o app gratuito
@@ -53,6 +54,32 @@ roteador ou o painel do OpenMediaVault. A placa só precisa do **cabo de rede** 
    vai acessar o NAS de fora, instale o app Tailscale e entre na mesma conta.
 9. **Conectar os SSDs** nas portas **USB 3.0 (azuis)**, a qualquer momento. Eles aparecem na
    página em até 1 minuto.
+
+### Tela OLED (opcional)
+
+Uma telinha OLED **0,96" 128x64 I2C de 4 pinos** (controlador SSD1306, por exemplo a
+**GM009605**) mostra o estado do NAS sem precisar de monitor. Ligue com a placa **desligada**:
+
+| Pino da tela | Pino da ROCK 4B+ (barra de 40 pinos) |
+|---|---|
+| GND | **6** (GND) |
+| VCC | **1** (3,3 V) — **não** use os pinos 2 ou 4 (5 V) |
+| SCL | **5** (I2C7_SCL) |
+| SDA | **3** (I2C7_SDA) |
+
+| A tela mostra | Significado |
+|---|---|
+| LIGANDO | A placa está iniciando (aparece ~4 s depois de ligar a energia) |
+| SEM REDE | Só aparece se, 3 minutos depois de ligar, a placa ainda não entrou na rede |
+| PREPARANDO | Primeiro boot: aguarde e não desligue |
+| SEM NET | Está na rede, mas sem internet há mais de 3 minutos |
+| **PRONTO!** | **Abra o endereço mostrado no navegador** e crie o usuário |
+| INSTALANDO | Etapa atual (1 a 5) e barra de progresso |
+| ERRO | Abra a página e clique em *Tentar de novo* |
+| NAS OK | Endereço, IP, discos e Nextcloud |
+
+Sem a tela, tudo funciona igual. Depois de 10 minutos sem mudança, o brilho baixa para
+poupar o OLED.
 
 ### O que acontece com cada SSD
 
@@ -107,6 +134,8 @@ nas-imagem/
     ├── instalar-nas.sh        instalador (base, organizador de SSDs, verificação)
     ├── nas-assistente.py      página de configuração/painel (porta 8000, só Python padrão)
     ├── nas-preparar.sh        1º boot: segurança + pacotes da página
+    ├── nas-oled.py            tela OLED opcional (SSD1306, I2C 7; só Python padrão)
+    ├── nas-oled.service       mantém a tela atualizada (encerra se não houver tela)
     ├── nas-preparar.service   roda o nas-preparar.sh uma vez
     ├── nas-assistente.service mantém a página no ar
     └── nas-base.service       instalação base (continua sozinha se a placa reiniciar)
@@ -134,6 +163,24 @@ nas-imagem/
    - detecta SSDs, prepara os vazios e adota os montados pelo OMV;
    - cria as pastas e compartilhamentos e sobe o Nextcloud;
    - liga o cron, o watchdog e o backup de configuração.
+5. **`nas-oled`** (sempre ativo, desde o boot): procura uma tela SSD1306 em `/dev/i2c-7`
+   (endereço 0x3C ou 0x3D) e mostra o estado lendo os mesmos arquivos da página. A imagem liga o
+   barramento com `overlays=rk3399-i2c7` no `/boot/armbianEnv.txt` e o módulo `i2c-dev`. Para ver
+   as telas sem a placa: `python3 arquivos/nas-oled.py --previa pasta/` gera um PNG de cada uma.
+
+**Bootloader (U-Boot) do NAS.** O U-Boot que vem no Armbian não tem o comando `i2c`, então a tela
+só acenderia quando o Linux começasse (~25 s). A imagem usa um U-Boot v2025.01 (com TF-A v2.12.0)
+recompilado por `arquivos/u-boot/compilar-u-boot.sh`, igual ao oficial da ROCK Pi 4 com três
+mudanças: comando `i2c`, I2C7 ligado e `BOOTDELAY=0`. O `gerar-imagem.sh`:
+
+- grava `idbloader.img` no setor 64 e `u-boot.itb` no setor 16384 (antes da partição, no 32768);
+- põe no começo do `/boot/boot.cmd` o bloco `arquivos/u-boot/boot-oled.cmd`, que manda a tela
+  "LIGANDO" (`/boot/nas-oled-ligando.bin`, gerada por `nas-oled.py --quadro-ligando`) por I2C, e
+  recompila o `boot.scr`;
+- trava (`hold`) o pacote `linux-u-boot-*` do Armbian, para uma atualização não trocar o U-Boot.
+
+Resultado na placa: "LIGANDO" aparece ~4 s depois de ligar a energia. Sem tela, ou com outro
+U-Boot, os comandos falham em silêncio e o boot segue normal.
 
 O progresso fica em `/var/lib/nas-instalador/progresso.json`, que a página lê, e o log completo
 em `/var/log/nas-instalador.log`.
@@ -193,8 +240,11 @@ Problemas encontrados no microSD do protótipo e como a instalação automática
 
 - Validado em sintaxe e lógica: `bash -n`, ShellCheck sem avisos, a página testada no navegador
   e a detecção de discos testada com dados simulados.
-- **Falta o teste completo na placa.** O primeiro boot real vai mostrar os ajustes necessários,
-  que ficam registrados em `/var/log/nas-preparar.log` e `/var/log/nas-instalador.log`.
+- Testado na ROCK 4B+: primeiro boot, página, instalação base, detecção de SSD/HD e tela OLED
+  (com o U-Boot do NAS). Os registros ficam em `/var/log/nas-preparar.log` e
+  `/var/log/nas-instalador.log`.
+- O LED azul de status desta placa não funcionou; por isso o sinal de "pronto" é a tela OLED
+  (opcional) ou esperar de 10 a 15 minutos.
 - A imagem `nextcloud:apache` acompanha a versão mais nova do Nextcloud. Para fixar uma versão,
   edite `NC_IMAGE` no `instalar-nas.sh` antes de gerar a imagem.
 - Feito para a ROCK 4B+. Outras placas com Armbian trixie devem funcionar trocando a URL em

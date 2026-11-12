@@ -23,7 +23,7 @@
 set -Eeuo pipefail
 shopt -s inherit_errexit   # erros dentro de $(...) tambem param o script
 
-VERSAO="2.0"
+VERSAO="2.1"
 LOG=/var/log/nas-instalador.log
 ESTADO_DIR=/var/lib/nas-instalador
 ESTADO="$ESTADO_DIR/etapas"

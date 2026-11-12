@@ -1,0 +1,16 @@
+[Unit]
+Description=NAS: tela OLED com o estado do NAS (opcional, I2C)
+# Sobe no instante em que o systemd comeca, sem esperar nada: a tela so precisa
+# do /dev/i2c-7 (driver embutido no kernel) e do python3, ja no disco do sistema.
+DefaultDependencies=no
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+ExecStart=/usr/bin/python3 -S /usr/local/lib/nas/nas-oled.py
+# Sem tela ligada o programa encerra sozinho (codigo 0) e nao e reiniciado.
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=sysinit.target
