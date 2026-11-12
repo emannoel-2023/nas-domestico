@@ -8,8 +8,6 @@ StartLimitIntervalSec=0
 ExecStart=/usr/bin/python3 /usr/local/lib/nas/nas-assistente.py
 Restart=always
 RestartSec=5
-# Pagina fora do ar: o LED volta ao batimento normal do Linux
-ExecStopPost=-/usr/local/sbin/nas-led ligando
 
 [Install]
 WantedBy=multi-user.target

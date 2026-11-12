@@ -9,7 +9,6 @@
 #    instalar-nas.sh --base                  instalacao sem perguntas (usada pela
 #                                            pagina de configuracao no navegador)
 #    instalar-nas.sh --organizar             procura SSDs e organiza (timer, 30 s)
-#    instalar-nas.sh --listar                so lista os discos (pagina, antes da base)
 #    instalar-nas.sh --formatar /dev/sdX     apaga um disco com dados e o usa
 #    instalar-nas.sh --verificar             confere a instalacao
 #
@@ -24,7 +23,7 @@
 set -Eeuo pipefail
 shopt -s inherit_errexit   # erros dentro de $(...) tambem param o script
 
-VERSAO="2.1"
+VERSAO="2.0"
 LOG=/var/log/nas-instalador.log
 ESTADO_DIR=/var/lib/nas-instalador
 ESTADO="$ESTADO_DIR/etapas"
@@ -782,13 +781,6 @@ modo_organizar() {
   return "$rc"
 }
 
-modo_listar() {     # so le os discos (nao formata nem monta nada). A pagina usa
-                    # isto antes de a instalacao base terminar, para o usuario ja
-                    # ver o disco que conectou; o organizador assume depois.
-  mkdir -p "$RUN_DIR"
-  escrever_discos_json
-}
-
 modo_formatar() {   # apaga um disco com dados, a pedido do usuario
   local d=${1:-}
   [[ -f "$ESTADO_DIR/base-ok" ]] || morrer "A instalacao base ainda nao terminou."
@@ -939,9 +931,6 @@ main() {
     --organizar)
       [[ $EUID -eq 0 ]] || exit 1
       modo_organizar ;;
-    --listar)
-      [[ $EUID -eq 0 ]] || exit 1
-      trap - ERR; modo_listar ;;
     --formatar)
       [[ $EUID -eq 0 ]] || exit 1
       iniciar_log "$@"; modo_formatar "${2:-}" ;;
@@ -952,7 +941,7 @@ main() {
       [[ $EUID -eq 0 ]] || { echo "Rode com sudo:  sudo bash $0"; exit 1; }
       iniciar_log; verificar_sistema; modo_terminal ;;
     *)
-      echo "Uso: $0 [--base | --organizar | --listar | --formatar /dev/sdX | --verificar]"; exit 1 ;;
+      echo "Uso: $0 [--base | --organizar | --formatar /dev/sdX | --verificar]"; exit 1 ;;
   esac
 }
 
