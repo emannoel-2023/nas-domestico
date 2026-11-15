@@ -6,6 +6,9 @@
 #    curl -fsSL https://raw.githubusercontent.com/emannoel-2023/nas-domestico/main/arquivos/instalar-oled.sh | sudo bash
 #    sudo bash instalar-oled.sh            (de dentro do repositorio clonado)
 #    sudo bash instalar-oled.sh --remover  desfaz tudo
+#    ... --girar   instala (ou atualiza) com a imagem girada 180 graus
+#    ... --normal  instala (ou atualiza) com a orientacao normal
+#    (com o curl, passe a opcao assim: | sudo bash -s -- --girar)
 #
 #  O que faz: copia o nas-oled.py e o servico nas-oled, e liga o I2C7 (pinos 3 e
 #  5) no /boot/armbianEnv.txt, guardando uma copia em armbianEnv.txt.antes-oled.
@@ -17,12 +20,17 @@ ENV=/boot/armbianEnv.txt
 COPIA="$ENV.antes-oled"
 DESTINO=/usr/local/lib/nas/nas-oled.py
 SERVICO=/etc/systemd/system/nas-oled.service
+GIRAR=/boot/nas-oled-girar
 
 [[ $EUID -eq 0 ]] || { echo "Rode com sudo."; exit 1; }
+case "${1:-}" in
+  ""|--remover|--girar|--normal) ;;
+  *) echo "Opcao desconhecida: $1 (use --girar, --normal ou --remover)"; exit 1 ;;
+esac
 
 if [[ "${1:-}" == "--remover" ]]; then
   systemctl disable --now nas-oled.service 2>/dev/null || true
-  rm -f "$SERVICO" "$DESTINO"
+  rm -f "$SERVICO" "$DESTINO" "$GIRAR"
   if [[ -f "$COPIA" ]]; then cp -p "$COPIA" "$ENV"; rm -f "$COPIA"; fi
   systemctl daemon-reload
   echo "Tela OLED removida. O I2C7 desliga no proximo boot (sudo reboot)."
@@ -46,6 +54,13 @@ grep -q '^ExecStart=' "$tmp/nas-oled.service"
 
 install -D -m 755 "$tmp/nas-oled.py" "$DESTINO"
 install -D -m 644 "$tmp/nas-oled.service" "$SERVICO"
+
+# Orientacao: sem opcao, mantem a que ja estava
+case "${1:-}" in
+  --girar)  touch "$GIRAR" ;;
+  --normal) rm -f "$GIRAR" ;;
+esac
+if [[ -e "$GIRAR" ]]; then echo "Orientacao: girada 180 graus"; else echo "Orientacao: normal"; fi
 
 # Liga o I2C7 no boot (so acrescenta; guarda a versao original uma vez)
 [[ -f "$COPIA" ]] || cp -p "$ENV" "$COPIA"

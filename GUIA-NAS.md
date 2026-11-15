@@ -92,7 +92,12 @@ sudo reboot
 Ele só copia o programa da tela e liga o I2C7 no `/boot/armbianEnv.txt` (guardando uma cópia
 em `armbianEnv.txt.antes-oled`). Nesse modo, a tela mostra o nome da placa, o IP, o IP do
 Tailscale, quantos discos estão ligados e os tamanhos. Para desfazer, rode o mesmo comando com
-`| sudo bash -s -- --remover`. O "LIGANDO" em 4 segundos depende do U-Boot do NAS e não é
+`| sudo bash -s -- --remover`.
+
+**Tela de cabeça para baixo?** Se a tela ficou montada invertida no gabinete, rode o mesmo
+comando com `| sudo bash -s -- --girar` para girar a imagem 180 graus (e `--normal` para
+voltar). Isso vale para as duas formas de instalação: o comando cria o arquivo
+`/boot/nas-oled-girar`, que o programa da tela e o "LIGANDO" do U-Boot conferem. O "LIGANDO" em 4 segundos depende do U-Boot do NAS e não é
 instalado por esse comando; sem ele, a tela acende quando o Linux começa.
 
 ### O que acontece com cada SSD

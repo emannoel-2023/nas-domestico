@@ -31,6 +31,9 @@ BASE_OK = "/var/lib/nas-instalador/base-ok"
 DISCOS = "/run/nas/discos.json"
 INSTALADOR = "/usr/local/sbin/instalar-nas.sh"
 LOG_PREPARAR = "/var/log/nas-preparar.log"
+# Se este arquivo existir, a imagem e girada 180 graus (tela montada de cabeca para
+# baixo). Fica no /boot para o U-Boot tambem enxergar. Ligar: instalar-oled.sh --girar
+GIRAR = "/boot/nas-oled-girar"
 PORTA = 8000
 ESPERA_IP = 180          # segundos depois do boot antes de dizer "SEM REDE"
 ESPERA_TELA = 30         # segundos procurando a tela (o I2C pode demorar a aparecer)
@@ -151,8 +154,11 @@ class Tela:
         os.write(self.fd, bytes([0x00, *cmds]))
 
     def iniciar(self):
+        girar = os.path.exists(GIRAR)
+        # 0xA1/0xC8 = orientacao normal; 0xA0/0xC0 = girada 180 graus
+        trocar = {0xA1: 0xA0, 0xC8: 0xC0} if girar else {}
         for c in self.INICIO:
-            self.comandos(c)
+            self.comandos(trocar.get(c, c))
 
     def mostrar(self, quadro):
         self.comandos(0x21, 0, LARG - 1)
